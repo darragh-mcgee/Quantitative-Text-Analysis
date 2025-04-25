@@ -33,5 +33,6 @@ Language is examined as both a **signal** and **mechanism** of personal transfor
 - KWIC quotes were lightly edited for clarity and coherence, preserving narrative intent while ensuring interpretability.
 
 ## Data
+Interview transcript data used in the analysis are not included in this repository, due to ethical considerations and participant confidentiality.
 
-Interview transcript data used in the analysis are **not included** in this repository.
+While representative quotes from the KWIC analysis are presented in the paper, the full KWIC outputs are also not shared publicly for the same reasons. However, documentation of the analysis process is available through the provided code, and evidence can be made available on request for academic or evaluation purposes.
