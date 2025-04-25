@@ -1,0 +1,154 @@
+---
+title: "Quantitative Text Analysis Final Project"
+author: "Darragh McGee"
+date: "2025-04-23"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required libraries
+library(readtext)
+library(tidytext)
+library(textdata)
+library(dplyr)
+library(stringr)
+library(tibble)
+library(quanteda)
+library(topicmodels)
+library(tidyr)
+```
+
+
+```{r Loading Data}
+# Define paths
+midline_path <- "C:/Users/darra/OneDrive/Desktop/Postgraduate Course/Quantitative Text Analysis/Final Assignment/Matched Interviews/Midline/"
+endline_path <- "C:/Users/darra/OneDrive/Desktop/Postgraduate Course/Quantitative Text Analysis/Final Assignment/Matched Interviews/Endline/"
+
+# Function to read .docx files using readtext
+read_interviews <- function(folder, timepoint) {
+  texts <- readtext(paste0(folder, "*.docx"))
+  
+  tibble(
+    participant_id = str_extract(basename(texts$doc_id), "[A-Z]\\d+"),
+    timepoint = timepoint,
+    text = str_squish(texts$text)
+  )
+}
+
+# Read and combine midline and endline interviews
+midline_data <- read_interviews(midline_path, "midline")
+endline_data <- read_interviews(endline_path, "endline")
+
+interview_data <- bind_rows(midline_data, endline_data)
+
+# Optional: Save to CSV
+write.csv(interview_data, "/Users/darra/OneDrive/Desktop/Postgraduate Course/Quantitative Text Analysis/Final Assignment/Matched Interviews/interview_corpus.csv", row.names = FALSE)
+
+# View output
+print(interview_data)
+```
+
+```{r Most Frequent Words}
+# Remove standalone "yes", "no", "yeah" as full words (not part of longer phrases)
+interview_data_cleaned <- interview_data %>%
+  mutate(text = str_replace_all(text, "\\b(yes|no|yeah)\\b\\.?\\s*", " "))
+
+# Tokenise without stopwords to find common content words
+data(stop_words)
+top_words <- interview_data_cleaned %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  count(word, sort = TRUE)
+
+print(top_words, n = 50)  # Inspect most common meaningful words
+```
+
+```{r KWIC}
+# Create the corpus
+corpus_all <- corpus(interview_data_cleaned, text_field = "text")
+
+# Separate midline and endline
+corpus_midline <- corpus_subset(corpus_all, timepoint == "midline")
+corpus_endline <- corpus_subset(corpus_all, timepoint == "endline")
+
+# Tokenise
+tokens_midline <- tokens(corpus_midline)
+tokens_endline <- tokens(corpus_endline)
+
+# Define Key Words
+kwic_groups <- list(
+  identity = c("myself", "responsibility", "man", "father", "leader", "role", "discipline", "changed"),
+  future = c("job", "school", "plan", "future", "money", "goals"),
+  relationships = c("family", "mentor", "community", "friends"),
+  streetlife = c("streets", "neighborhood", "cops"),
+  emotion = c("care", "love", "trust"),
+  program_impact = c("helped", "support", "learned")
+)
+
+# Output folder
+output_dir <- "C:/Users/darra/OneDrive/Desktop/Postgraduate Course/Quantitative Text Analysis/Final Assignment/Matched Interviews/kwic_theme_timepoint_tables"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Loop through themes and keywords
+for (group in names(kwic_groups)) {
+  
+  midline_group <- data.frame()
+  endline_group <- data.frame()
+  
+  for (word in kwic_groups[[group]]) {
+    kwic_m <- kwic(tokens_midline, pattern = word, window = 8)
+    kwic_e <- kwic(tokens_endline, pattern = word, window = 8)
+    
+    if (nrow(kwic_m) > 0) {
+      kwic_m$keyword <- word
+      midline_group <- bind_rows(midline_group, kwic_m[, c("keyword", "pre", "keyword", "post")])
+    }
+    if (nrow(kwic_e) > 0) {
+      kwic_e$keyword <- word
+      endline_group <- bind_rows(endline_group, kwic_e[, c("keyword", "pre", "keyword", "post")])
+    }
+  }
+  
+  # Write CSVs to the new location
+  if (nrow(midline_group) > 0) {
+    write.csv(midline_group, file.path(output_dir, paste0(group, "_midline_kwic.csv")), row.names = FALSE)
+  }
+  if (nrow(endline_group) > 0) {
+    write.csv(endline_group, file.path(output_dir, paste0(group, "_endline_kwic.csv")), row.names = FALSE)
+  }
+}
+```
+
+
+```{r Key Word Counts}
+# Flatten keyword list into a lookup table
+keyword_df <- enframe(kwic_groups, name = "theme", value = "keywords") %>%
+  unnest(keywords)
+
+# Tokenise all transcripts and join with keyword categories
+token_theme_data <- interview_data_cleaned %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_to_lower(word)) %>%
+  left_join(keyword_df, by = c("word" = "keywords"))
+
+# Total word counts per timepoint
+word_counts <- token_theme_data %>%
+  group_by(timepoint) %>%
+  summarise(total_words = n(), .groups = "drop")
+
+# Keyword counts per theme and timepoint
+keyword_counts <- token_theme_data %>%
+  filter(!is.na(theme)) %>%
+  group_by(timepoint, theme) %>%
+  summarise(keyword_hits = n(), .groups = "drop")
+
+# Merge and normalise
+theme_summary <- keyword_counts %>%
+  left_join(word_counts, by = "timepoint") %>%
+  mutate(norm_per_1000 = (keyword_hits / total_words) * 1000)
+
+# View normalised keyword frequencies
+theme_summary %>%
+  arrange(theme, timepoint)
+```
